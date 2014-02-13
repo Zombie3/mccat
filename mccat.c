@@ -292,16 +292,16 @@ static int parse_args(int argc, char *argv[])
         switch (c)
         {
         case 'x':
-            ts_hexdump = c;
+            ts_hexdump = 1;
             break;
         case 'q':
-            quiet = c;
+            quiet = 1;
             break;
         case 'e':
-            epoch = c;
+            epoch = 1;
             break;
         case 'r':
-            rtp_check = c;
+            rtp_check = 1;
             break;
         case 0:
             break;
