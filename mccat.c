@@ -247,8 +247,16 @@ static void mainloop(int s)
                 }
                 else if (!(((new_rtp_seq == 0) && (rtp_seq == 65535)) ||
                         new_rtp_seq == rtp_seq + 1))
-                        ts_fprintf(stderr, NULL, "#%05d SSRC=0x%08x discontinuity, last seen #%05d SSRC=0x%08x\n",
-                                   new_rtp_seq, new_ssrc, rtp_seq, ssrc);
+		{
+			ssize_t lost;
+
+			if (new_rtp_seq < rtp_seq)
+			    lost = (65535 - rtp_seq) + new_rtp_seq - 1;
+			else
+			    lost = new_rtp_seq - rtp_seq - 1;
+                        ts_fprintf(stderr, NULL, "#%05d SSRC=0x%08x discontinuity, last seen #%05d SSRC=0x%08x, lost: %5d\n",
+                                   new_rtp_seq, new_ssrc, rtp_seq, ssrc, lost);
+		}
                 rtp_seq = new_rtp_seq;
                 ssrc = new_ssrc;
                 if (show_status)
