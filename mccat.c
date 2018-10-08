@@ -39,6 +39,7 @@
 #include <arpa/inet.h>
 #include <getopt.h>
 #include <poll.h>
+#include <syslog.h>
 
 #define BUFSIZE 4096
 
@@ -100,15 +101,16 @@ int main(int argc, char *argv[])
 
     if (parse_args(argc, argv))
     {
-        show_usage(argv[0]);
-        return EXIT_FAILURE;
+	show_usage(argv[0]);
+	return EXIT_FAILURE;
     }
 
+    openlog(NULL,LOG_PID|LOG_CONS|LOG_NOWAIT|LOG_PERROR,LOG_USER);
     s = socket(addr.sin_family == AF_INET ? PF_INET : PF_INET6, SOCK_DGRAM, 0);
     if (s < 0)
     {
-        fprintf(stderr, "Error opening socket: %s\n", strerror(errno));
-        return EXIT_FAILURE;
+	fprintf(stderr, "Error opening socket: %s\n", strerror(errno));
+	return EXIT_FAILURE;
     }
     sin = addr;
 
@@ -117,45 +119,47 @@ int main(int argc, char *argv[])
     if (use_multicast)
     {
         int optval = 1;
-        if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
-        {
-            fprintf(stderr, "Warning: could not set SO_REUSEADDR for multicast group %s: %m\n",
-                    /*inet_ntoa(mreq.imr_multiaddr)*/ "toto");
-        }
+	if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
+	{
+	    fprintf(stderr, "Warning: could not set SO_REUSEADDR for multicast group %s: %m\n",
+		    /*inet_ntoa(mreq.imr_multiaddr)*/ "toto");
+	}
     }
 
-        fprintf(stderr, "Binding to port %hu of %s\n",
-                ntohs(sin.sin_port), inet_ntoa(sin.sin_addr));
+	fprintf(stderr, "Binding to port %hu of %s\n",
+		ntohs(sin.sin_port), inet_ntoa(sin.sin_addr));
 
     if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
     {
         close(s);
-        fprintf(stderr, "Error binding to port %hu of %s: %s\n",
-                ntohs(sin.sin_port), inet_ntoa(sin.sin_addr),
-                strerror(errno));
-        return EXIT_FAILURE;
+	fprintf(stderr, "Error binding to port %hu of %s: %s\n",
+		ntohs(sin.sin_port), inet_ntoa(sin.sin_addr),
+		strerror(errno));
+	closelog();
+	return EXIT_FAILURE;
     }
 
     if (use_multicast)
     {
-        /*
-        mreq.imr_multiaddr = addr.sin_addr;
-        mreq.imr_address = my_addr.sin_addr;
-        mreq.imr_ifindex = if_index;
-        */
+	/*
+	mreq.imr_multiaddr = addr.sin_addr;
+	mreq.imr_address = my_addr.sin_addr;
+	mreq.imr_ifindex = if_index;
+	*/
 
-        fdd_mreq.imr_multiaddr = addr.sin_addr;
-        fdd_mreq.imr_interface = /*my_addr.sin_addr*/ local_addr;
+	fdd_mreq.imr_multiaddr = addr.sin_addr;
+	fdd_mreq.imr_interface = /*my_addr.sin_addr*/ local_addr;
 
-        fprintf(stderr, "Joining group %s:%hu\n",
-                inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+	fprintf(stderr, "Joining group %s:%hu\n",
+		inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
-        if (setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &fdd_mreq, sizeof(fdd_mreq)) < 0)
-        {
+	if (setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &fdd_mreq, sizeof(fdd_mreq)) < 0)
+	{
             close(s);
-            fprintf(stderr, "Error joining multicast group: %s\n", strerror(errno));
-            return EXIT_FAILURE;
-        }
+	    fprintf(stderr, "Error joining multicast group: %s\n", strerror(errno));
+	    closelog();
+	    return EXIT_FAILURE;
+	}
     }
 
     sigaction(SIGINT, &newsig, &oldsig);
@@ -165,21 +169,22 @@ int main(int argc, char *argv[])
 
     if (use_multicast)
     {
-        /*
-        mreq.imr_multiaddr = addr.sin_addr;
-        mreq.imr_address = my_addr.sin_addr;
-        mreq.imr_ifindex = if_index;
-        */
+	/*
+	mreq.imr_multiaddr = addr.sin_addr;
+	mreq.imr_address = my_addr.sin_addr;
+	mreq.imr_ifindex = if_index;
+	*/
 
-        fdd_mreq.imr_multiaddr = addr.sin_addr;
-        fdd_mreq.imr_interface = /*my_addr.sin_addr*/ local_addr;
+	fdd_mreq.imr_multiaddr = addr.sin_addr;
+	fdd_mreq.imr_interface = /*my_addr.sin_addr*/ local_addr;
 
-        if (setsockopt(s, IPPROTO_IP, IP_DROP_MEMBERSHIP, &fdd_mreq, sizeof(fdd_mreq)) < 0)
-        {
-            fprintf(stderr, "Error leaving multicast group: %s\n", strerror(errno));
-        }
+	if (setsockopt(s, IPPROTO_IP, IP_DROP_MEMBERSHIP, &fdd_mreq, sizeof(fdd_mreq)) < 0)
+	{
+	    fprintf(stderr, "Error leaving multicast group: %s\n", strerror(errno));
+	}
     }
     close(s);
+    closelog();
     return EXIT_SUCCESS;
 }
 
@@ -206,7 +211,7 @@ static int ts_fprintf(FILE *f, struct timeval *tv, const char *format, ...)
 
     if (tv == NULL)
     {
-        gettimeofday(&now, NULL);
+	gettimeofday(&now, NULL);
         tv = &now;
     }
     if (epoch)
@@ -214,7 +219,7 @@ static int ts_fprintf(FILE *f, struct timeval *tv, const char *format, ...)
     else
     {
 /*        dt = gmtime(&tv->tv_sec);*/
-        dt = localtime(&tv->tv_sec);
+	dt = localtime(&tv->tv_sec);
         offset = fprintf(f, "%4d/%02d/%02d %02d:%02d:%02d.%06lu ",
                          dt->tm_year + 1900, dt->tm_mon + 1, dt->tm_mday,
                          dt->tm_hour, dt->tm_min, dt->tm_sec, tv->tv_usec);
@@ -261,68 +266,70 @@ static void mainloop(int s)
                 break;
             }
         }
-        gettimeofday(&pkt_ts, NULL);
-        u64_pkt_ts = (uint64_t)pkt_ts.tv_sec * (uint64_t)1000000 + (uint64_t)pkt_ts.tv_usec;
-        u64_pkt_delta_us = u64_pkt_ts - u64_prev_pkt_ts;
+       	gettimeofday(&pkt_ts, NULL);
+	u64_pkt_ts = (uint64_t)pkt_ts.tv_sec * (uint64_t)1000000 + (uint64_t)pkt_ts.tv_usec;
+	u64_pkt_delta_us = u64_pkt_ts - u64_prev_pkt_ts;
 
-        if (stats && u64_pkt_ts >= stats_next_report)
-        {
-            total_rx_pkts += (uint64_t)stats_rx_pkts;
-            total_rx_bytes += (uint64_t)stats_rx_bytes;
-            total_rtp_lost += (uint64_t)stats_rtp_lost;
-            total_rtp_latency += (uint64_t)stats_rtp_latency;
-            if (stats_rx_pkts)
-                stats_rtp_lost_ratio = (double)stats_rtp_lost * 100.0 /(double)stats_rx_pkts;
-            if (total_rx_pkts)
-                total_rtp_lost_ratio = (double)total_rtp_lost * 100.0/ (double)total_rx_pkts;
-            stats_rtp_bw = (double)stats_rx_bytes * 8.0 * 1000000.0 /(((double)u64_pkt_ts - (double)stats_last_report) * 1000.0);
-/*          ts_fprintf(stdout, NULL, "typ=REPORT,RXPKTS=%d,RXBYTES=%d,LOST=%d,LATENCY=%d,LOSTRATIO[%%]=%lf,TOTLOSTRATIO[%%]=%lf,BW=%lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);*/
-            ts_fprintf(stdout, NULL, "REPORT %d %d %d %d %lf %lf %lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);
-            fflush(stdout);
-            stats_rx_pkts = 0;
-            stats_rx_bytes = 0;
-            stats_rtp_lost = 0;
-            stats_rtp_latency = 0;
-            stats_last_report = u64_pkt_ts;
-            stats_next_report = u64_pkt_ts + (uint64_t)1000000 * (uint64_t)stats;
-        }
-        if (!fds[0].revents & POLLIN) {
+	if (stats && u64_pkt_ts >= stats_next_report)
+	{
+	    total_rx_pkts += (uint64_t)stats_rx_pkts;
+	    total_rx_bytes += (uint64_t)stats_rx_bytes;
+	    total_rtp_lost += (uint64_t)stats_rtp_lost;
+	    total_rtp_latency += (uint64_t)stats_rtp_latency;
+		/* Compute rtp lost ratio on basis of estimated rx packets = actual rx packets + lost packets */
+	    if (stats_rx_pkts)
+		stats_rtp_lost_ratio = (double)stats_rtp_lost * 100.0 / ((double)stats_rx_pkts + (double)stats_rtp_lost);
+	    if (total_rx_pkts)
+		total_rtp_lost_ratio = (double)total_rtp_lost * 100.0/ ((double)total_rx_pkts + (double)total_rtp_lost);
+	    stats_rtp_bw = (double)stats_rx_bytes * 8.0 * 1000000.0 /(((double)u64_pkt_ts - (double)stats_last_report) * 1000.0);
+/*	    ts_fprintf(stdout, NULL, "typ=REPORT,RXPKTS=%d,RXBYTES=%d,LOST=%d,LATENCY=%d,LOSTRATIO[%%]=%lf,TOTLOSTRATIO[%%]=%lf,BW=%lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);*/
+/*	    ts_fprintf(stdout, NULL, "REPORT %d %d %d %d %lf %lf %lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);*/
+	    syslog(LOG_USER|LOG_NOTICE, "REPORT %d %d %d %d %lf %lf %lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);
+	    fflush(stdout);
+	    stats_rx_pkts = 0;
+	    stats_rx_bytes = 0;
+	    stats_rtp_lost = 0;
+	    stats_rtp_latency = 0;
+	    stats_last_report = u64_pkt_ts;
+	    stats_next_report = u64_pkt_ts + (uint64_t)1000000 * (uint64_t)stats;
+	}
+	if (!fds[0].revents & POLLIN) {
 //            fprintf(stderr, "[FDD] POLLIN not set [revents=0x%08X]\n", fds[0].revents);
             continue;
         }
 
-        n = recv(s, buf, sizeof(buf), MSG_DONTWAIT);
+	n = recv(s, buf, sizeof(buf), MSG_DONTWAIT);
 
-        if (n < 0)
-        {
-//          fprintf(stderr, "Error in recv() from (%s:%hu): %m\n",
-//                  inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+	if (n < 0)
+	{
+//	    fprintf(stderr, "Error in recv() from (%s:%hu): %m\n",
+//		    inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 //            break;
             continue;
-        }
+	}
         if (n == 0) {
-            fprintf(stderr, "[FDD] Recv 0 bytes revents=0x%08X\n", fds[0].revents);
-            break;
+	    fprintf(stderr, "[FDD] Recv 0 bytes revents=0x%08X\n", fds[0].revents);
+	    break;
         }
-        stats_rx_pkts++;
-        stats_rx_bytes += n;
-        if (rtp_check)
+	stats_rx_pkts++;
+	stats_rx_bytes += n;
+	if (rtp_check)
         {
             ssize_t new_rtp_seq;
             uint32_t new_ssrc, csrc, new_rtp_timestamp, ts_delta, ts_delta_us;
             unsigned int pt, cc;
-            int latency_factor = rtp_latency == 0 ? 2 : rtp_latency;
+	    int latency_factor = rtp_latency == 0 ? 2 : rtp_latency;
 
-            if (n < 12)
+	    if (n < 12)
                 ts_fprintf(stderr, NULL, "read %d bytes: too short for RTP header\n", n);
             else
             {
                 new_rtp_seq = (buf[2] << 8) + buf[3];
                 new_ssrc = (((((buf[8] << 8) | buf[9]) << 8) | buf[10]) << 8) | buf[11];
                 new_rtp_timestamp = (((((buf[4] << 8) | buf[5]) << 8) | buf[6]) << 8) | buf[7];
-                ts_delta = new_rtp_timestamp - rtp_timestamp;
-                /* RTP TS clock is at 90KHz */
-                ts_delta_us = ts_delta * 1000 / 90;
+		ts_delta = new_rtp_timestamp - rtp_timestamp;
+		/* RTP TS clock is at 90KHz */
+		ts_delta_us = ts_delta * 1000 / 90;
                 pt = buf[1] & 0x7f;
                 cc = buf[0] & 0x0f;
                 if (rtp_seq < 0 || new_ssrc != ssrc)
@@ -340,66 +347,68 @@ static void mainloop(int s)
                     }
 
 
-                    /* Print and close prev SSRC stats */
-                    total_rx_pkts += (uint64_t)stats_rx_pkts;
-                    total_rx_bytes += (uint64_t)stats_rx_bytes;
-                    total_rtp_lost += (uint64_t)stats_rtp_lost;
-                    total_rtp_latency += (uint64_t)stats_rtp_latency;
-                    if (stats_rx_pkts)
-                        stats_rtp_lost_ratio = (double)stats_rtp_lost * 100.0 /(double)stats_rx_pkts;
-                    if (total_rx_pkts)
-                        total_rtp_lost_ratio = (double)total_rtp_lost * 100.0/ (double)total_rx_pkts;
-                    stats_rtp_bw = (double)stats_rx_bytes * 8.0 * 1000000.0 /(((double)u64_pkt_ts - (double)stats_last_report) * 1000.0);
-                    ts_fprintf(stdout, NULL, "typ=REPORT,RXPKTS=%d,RXBYTES=%d,LOST=%d,LATENCY=%d,LOSTRATIO[%%]=%lf,TOTLOSTRATIO[%%]=%lf,BW=%lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);
-                    fflush(stdout);
+		    /* Print and close prev SSRC stats */
+		    total_rx_pkts += (uint64_t)stats_rx_pkts;
+		    total_rx_bytes += (uint64_t)stats_rx_bytes;
+		    total_rtp_lost += (uint64_t)stats_rtp_lost;
+		    total_rtp_latency += (uint64_t)stats_rtp_latency;
+			/* Compute rtp lost ratio on basis of estimated rx packets = actual rx packets + lost packets */
+		    if (stats_rx_pkts)
+			stats_rtp_lost_ratio = (double)stats_rtp_lost * 100.0 /((double)stats_rx_pkts + (double)stats_rtp_lost);
+		    if (total_rx_pkts)
+			total_rtp_lost_ratio = (double)total_rtp_lost * 100.0/ ((double)total_rx_pkts + (double)total_rtp_lost);
+		    stats_rtp_bw = (double)stats_rx_bytes * 8.0 * 1000000.0 /(((double)u64_pkt_ts - (double)stats_last_report) * 1000.0);
+		    syslog(LOG_USER|LOG_NOTICE, "REPORT %d %d %d %d %lf %lf %lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);
+/*		    ts_fprintf(stdout, NULL, "typ=REPORT,RXPKTS=%d,RXBYTES=%d,LOST=%d,LATENCY=%d,LOSTRATIO[%%]=%lf,TOTLOSTRATIO[%%]=%lf,BW=%lf\n", stats_rx_pkts, stats_rx_bytes, stats_rtp_lost, stats_rtp_latency, stats_rtp_lost_ratio, total_rtp_lost_ratio, stats_rtp_bw);*/
+		    fflush(stdout);
 
-                    /* Init new SSRC stats */
-                    stats_rx_pkts = 0;
-                    stats_rx_bytes = 0;
-                    stats_rtp_lost = 0;
-                    stats_rtp_latency = 0;
-                    stats_last_report = u64_pkt_ts;
-                    stats_next_report = u64_pkt_ts + (uint64_t)1000000 * (uint64_t)stats;
-                 }
+		    /* Init new SSRC stats */
+		    stats_rx_pkts = 0;
+		    stats_rx_bytes = 0;
+    		    stats_rtp_lost = 0;
+		    stats_rtp_latency = 0;
+		    stats_last_report = u64_pkt_ts;
+		    stats_next_report = u64_pkt_ts + (uint64_t)1000000 * (uint64_t)stats;
+	         }
                 else if (!(((new_rtp_seq == 0) && (rtp_seq == 65535)) ||
                         new_rtp_seq == rtp_seq + 1))
-                {
-                        ssize_t lost;
+		{
+			ssize_t lost;
 
-                        if (new_rtp_seq < rtp_seq) {
-                            lost = (65535 - rtp_seq) + new_rtp_seq - 1;
-                            ts_fprintf(stderr, &pkt_ts, "#%05d SSRC=0x%08x discontinuity/reorder, last seen #%05d SSRC=0x%08x, lost: %5d\n",
+			if (new_rtp_seq < rtp_seq) {
+			    lost = (65535 - rtp_seq) + new_rtp_seq - 1;
+           		    ts_fprintf(stderr, &pkt_ts, "#%05d SSRC=0x%08x discontinuity/reorder, last seen #%05d SSRC=0x%08x, lost: %5d\n",
                                    new_rtp_seq, new_ssrc, rtp_seq, ssrc, lost);
-                        } else {
-                            lost = new_rtp_seq - rtp_seq - 1;
-                            ts_fprintf(stderr, &pkt_ts, "#%05d SSRC=0x%08x discontinuity, last seen #%05d SSRC=0x%08x, lost: %5d\n",
+			} else {
+			    lost = new_rtp_seq - rtp_seq - 1;
+           		    ts_fprintf(stderr, &pkt_ts, "#%05d SSRC=0x%08x discontinuity, last seen #%05d SSRC=0x%08x, lost: %5d\n",
                                    new_rtp_seq, new_ssrc, rtp_seq, ssrc, lost);
-                        }
-                        stats_rtp_lost += lost;
-                }
-                if (rtp_seq >= 0 && u64_pkt_delta_us > (latency_factor * (uint64_t)ts_delta_us))
-                {
-                    ts_fprintf(stderr, &pkt_ts, "#%05d latency warning, RTP-TS=%013u RTP-TS-DELTA=%05u RTP_TS_DELTA_US=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, ts_delta, ts_delta_us, u64_pkt_delta_us);
-                    stats_rtp_latency++;
-                }
-                if (rtp_ival)
-                {
-                        if (new_rtp_timestamp > rtp_timestamp)
-                        {
-                                ts_fprintf(stderr, &pkt_ts, "#%05d RTP-TS=%013u RTP-TS-DELTA=%05u RTP_TS_DELTA_US=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, ts_delta, ts_delta_us, u64_pkt_delta_us);
-                        }
-                        else
-                        {
-                                ts_fprintf(stderr, &pkt_ts, "#%05d RTP-TS=%013u PREV-RTP-TS=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, rtp_timestamp, u64_pkt_ts - u64_prev_pkt_ts);
-                        }
-                }
+			}
+			stats_rtp_lost += lost;
+		}
+		if (rtp_seq >= 0 && u64_pkt_delta_us > (latency_factor * (uint64_t)ts_delta_us))
+		{
+		    ts_fprintf(stderr, &pkt_ts, "#%05d latency warning, RTP-TS=%013u RTP-TS-DELTA=%05u RTP_TS_DELTA_US=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, ts_delta, ts_delta_us, u64_pkt_delta_us);
+		    stats_rtp_latency++;
+		}
+		if (rtp_ival)
+		{
+			if (new_rtp_timestamp > rtp_timestamp)
+			{
+                    		ts_fprintf(stderr, &pkt_ts, "#%05d RTP-TS=%013u RTP-TS-DELTA=%05u RTP_TS_DELTA_US=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, ts_delta, ts_delta_us, u64_pkt_delta_us);
+			}
+			else
+			{
+                    		ts_fprintf(stderr, &pkt_ts, "#%05d RTP-TS=%013u PREV-RTP-TS=%013u PKT_TS_DELTA=%06u\n", new_rtp_seq, new_rtp_timestamp, rtp_timestamp, u64_pkt_ts - u64_prev_pkt_ts);
+			}
+		}
                 rtp_seq = new_rtp_seq;
-                rtp_timestamp = new_rtp_timestamp;
-                u64_prev_pkt_ts = u64_pkt_ts;
-                /*
-                prev_pkt_ts.tv_sec = pkt_ts.tv_sec;
-                prev_pkt_ts.tv_usec = pkt_ts.tv_usec;
-                */
+		rtp_timestamp = new_rtp_timestamp;
+		u64_prev_pkt_ts = u64_pkt_ts;
+		/*
+		prev_pkt_ts.tv_sec = pkt_ts.tv_sec;
+		prev_pkt_ts.tv_usec = pkt_ts.tv_usec;
+		*/
                 ssrc = new_ssrc;
                 if (show_status)
                 {
@@ -411,8 +420,8 @@ static void mainloop(int s)
        if (!quiet)
         {
             if (ts_hexdump)
-                hexdump(buf, n);
-            else
+	        hexdump(buf, n);
+	    else
             {
                 fwrite(buf, n, 1, stdout);
                 fflush(stdout);
@@ -471,11 +480,11 @@ static int parse_args(int argc, char *argv[])
             break;
         case 'L':
             if (inet_aton(optarg, &local_addr) == 0)
-                    local_addr.s_addr = INADDR_ANY;
+		    local_addr.s_addr = INADDR_ANY;
             break;
-        case 'l':
-            rtp_latency = atoi(optarg);
-            break;
+	case 'l':
+	    rtp_latency = atoi(optarg);
+	    break;
         case '?':
         default:
             return 1;
@@ -491,8 +500,8 @@ static int parse_args(int argc, char *argv[])
     he = gethostbyname(address);
     if (he == NULL)
     {
-        fprintf(stderr, "Failed to resolve \"%s\": %s\n", argv[1], strerror(h_errno));
-        return 1;
+	fprintf(stderr, "Failed to resolve \"%s\": %s\n", argv[1], strerror(h_errno));
+	return 1;
     }
     addr.sin_family = he->h_addrtype;
     addr.sin_port = htons(atoi(port));
@@ -502,57 +511,57 @@ static int parse_args(int argc, char *argv[])
     {
         use_multicast = 1;
 
-        if (if_name)
-        {
-            if_index = if_nametoindex(if_name);
+	if (if_name)
+	{
+	    if_index = if_nametoindex(if_name);
 
-            if (if_index == 0)
-            {
-                fprintf(stderr, "No such interface: %s\n", if_name);
-                return 1;
-            }
-        }
-        else
-        {
-            struct if_nameindex *nidx;
+	    if (if_index == 0)
+	    {
+		fprintf(stderr, "No such interface: %s\n", if_name);
+		return 1;
+	    }
+	}
+	else
+	{
+	    struct if_nameindex *nidx;
 
-            nidx = if_nameindex();
-            if (nidx[0].if_index == 0)
-            {
-                fprintf(stderr, "Failed to find any network interfaces.\n");
-                return 1;
-            }
-            if_index = nidx[0].if_index;
-            if_name = nidx[0].if_name;
-        }
+	    nidx = if_nameindex();
+	    if (nidx[0].if_index == 0)
+	    {
+		fprintf(stderr, "Failed to find any network interfaces.\n");
+		return 1;
+	    }
+	    if_index = nidx[0].if_index;
+	    if_name = nidx[0].if_name;
+	}
 
-        if ((s = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
-        {
-            perror("socket");
-            return 1;
-        }
-        memset(&ifr, 0, sizeof(struct ifreq));
-        strcpy(ifr.ifr_name, if_name);
-        if (ioctl(s, SIOCGIFDSTADDR, &ifr) < 0)
-        {
-            fprintf(stderr, "Failed to find IP address for interface %s: %m\n", if_name);
-            close(s);
-            return 1;
-        }
-        close(s);
+	if ((s = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+	    perror("socket");
+	    return 1;
+	}
+	memset(&ifr, 0, sizeof(struct ifreq));
+	strcpy(ifr.ifr_name, if_name);
+	if (ioctl(s, SIOCGIFDSTADDR, &ifr) < 0)
+	{
+	    fprintf(stderr, "Failed to find IP address for interface %s: %m\n", if_name);
+	    close(s);
+	    return 1;
+	}
+	close(s);
 
-        my_addr = *(struct sockaddr_in *)&ifr.ifr_addr;
-        if (my_addr.sin_family == 0xFFFF || my_addr.sin_family == 0)
-        {
-            fprintf(stderr, "Failed to find IP address for interface %s: unknown or invalid address family\n",
-                    if_name);
-            return 1;
-        }
+	my_addr = *(struct sockaddr_in *)&ifr.ifr_addr;
+	if (my_addr.sin_family == 0xFFFF || my_addr.sin_family == 0)
+	{
+	    fprintf(stderr, "Failed to find IP address for interface %s: unknown or invalid address family\n",
+		    if_name);
+	    return 1;
+	}
     }
     else
     {
-        my_addr.sin_family = AF_INET;
-        my_addr.sin_addr.s_addr = INADDR_ANY;
+	my_addr.sin_family = AF_INET;
+	my_addr.sin_addr.s_addr = INADDR_ANY;
     }
 
     return 0;
